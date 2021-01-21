@@ -11,4 +11,7 @@ func TestLookupBackupDirectories(t *testing.T) {
 	backups, err := LookupBackupDirectories()
 	assert.Nil(err)
 	assert.NotEmpty(backups)
+	meta, err := backups[0].GetBackupMetadata()
+	assert.Nil(err)
+	assert.NotNil(meta)
 }
