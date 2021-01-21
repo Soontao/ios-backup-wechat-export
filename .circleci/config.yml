@@ -1,0 +1,68 @@
+version: 2
+jobs:
+  test:
+    docker:
+      - image: circleci/golang:1.15
+
+    working_directory: ~/app
+    steps:
+      - checkout
+      - run: go test -race -coverprofile=coverage.txt -covermode=atomic -v -mod=vendor ./...
+      - run: bash <(curl -s https://codecov.io/bash)
+      - run: go build -mod=vendor .
+  build:
+    docker:
+      - image: circleci/golang:1.15
+
+    working_directory: ~/app
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ~/artifacts
+      - run:
+          name: unit tests
+          command: go test -v -mod=vendor ./...
+      - run:
+          name: build multi platform excutable file
+          command: cd ./cli && VERSION=${CIRCLE_TAG} bash ./build.sh
+      - persist_to_workspace:
+          root: ./main
+          paths:
+            - ./build
+
+  publish-github-release:
+    docker:
+      - image: cibuilds/github:0.13
+    steps:
+      - attach_workspace:
+          at: ~/artifacts
+      - run:
+          name: "Publish Release on GitHub"
+          command: |
+            VERSION=${CIRCLE_TAG}
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ~/artifacts/build/
+
+workflows:
+  version: 2
+  main:
+    jobs:
+      - test:
+          filters:
+            branches:
+              only: /.*/
+            tags:
+              ignore: /.*/
+      - build:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /.*/
+      - publish-github-release:
+          requires:
+            - build
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /.*/
