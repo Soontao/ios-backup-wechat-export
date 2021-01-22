@@ -27,9 +27,10 @@ func LookupBackupDirectories() (rt []*BackupInformation, err error) {
 		}
 		for _, file := range files {
 			if file.IsDir() {
-				rt = append(rt, &BackupInformation{
-					BackupDir: filepath.Join(backupsDir, file.Name()),
-				})
+				backup, err := NewBackupInformation(filepath.Join(backupsDir, file.Name()))
+				if err == nil {
+					rt = append(rt, backup)
+				}
 			}
 		}
 		return rt, nil

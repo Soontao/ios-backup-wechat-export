@@ -1,15 +1,14 @@
 package lib
 
 import (
-	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/square/squalor"
 	"howett.net/plist"
 )
 
@@ -18,8 +17,7 @@ const wechatAppID = "com.tencent.xin"
 // BackupInformation struct
 type BackupInformation struct {
 	BackupDir string
-	db        *squalor.DB
-	files     *squalor.Model
+	db        *sqlx.DB
 }
 
 // BackupMetadata struct
@@ -45,23 +43,13 @@ type ManifestPlist struct {
 
 // NewBackupInformation func
 func NewBackupInformation(dir string) (*BackupInformation, error) {
-	db, err := sql.Open("sqlite3", filepath.Join(dir, "Manifest.db"))
+	db, err := sqlx.Connect("sqlite3", filepath.Join(dir, "Manifest.db"))
 	if err != nil {
 		return nil, err
 	}
-	_db, err := squalor.NewDB(db)
-	if err != nil {
-		return nil, err
-	}
-	files, err := _db.BindModel("Files", &BackupFile{})
-	if err != nil {
-		return nil, err
-	}
-
 	return &BackupInformation{
 		BackupDir: dir,
-		db:        _db,
-		files:     files,
+		db:        db,
 	}, nil
 }
 
@@ -73,12 +61,25 @@ type BackupFile struct {
 	Flag         int    `db:"flags"`
 }
 
+// FindAllFilesByName func to get the real path by fuzzy search
+func (backup *BackupInformation) FindAllFilesByName(filename string) (rt []string) {
+	files := []BackupFile{}
+	sql := fmt.Sprintf("SELECT fileID,domain,relativePath,flags from Files where relativePath like \"%%%s\"", filename)
+	err := backup.db.Select(&files, sql)
+	if err == nil && len(files) > 0 {
+		fileID := files[0].FileID
+		rt = append(rt, filepath.Join(backup.BackupDir, fileID[:2], fileID))
+	}
+	return rt
+}
+
 // GetRealPath func to get the real path
 func (backup *BackupInformation) GetRealPath(iosPath string) (string, error) {
 	files := []BackupFile{}
 	backup.db.Select(
 		&files,
-		backup.files.Select(backup.files.All()).Where(backup.files.C("relativePath").Eq(iosPath)),
+		"SELECT * from Files where relativePath = $1",
+		iosPath,
 	)
 	if len(files) > 0 {
 		fileID := files[0].FileID
